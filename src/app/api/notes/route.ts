@@ -1,7 +1,7 @@
 import { dbConnect } from '@/lib/db';
 import Note from '@/models/Note';
 import { NextRequest, NextResponse } from 'next/server';
-
+import { revalidatePath } from 'next/cache';
 export async function GET(req: NextRequest) {
   await dbConnect();
   const { searchParams } = new URL(req.url);
@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
   const filter = query ? { productName: { $regex: query, $options: 'i' } } : {};
 
   const notes = await Note.find(filter);
+     revalidatePath('/api/notes');
   return NextResponse.json(notes);
 }
 
