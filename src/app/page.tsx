@@ -13,6 +13,28 @@ async function fetchNotes(query: string) {
   return res.json() as Promise<INote[]>;
 }
 
+// Map normal characters to bold unicode chars for a-z, A-Z
+const toBoldUnicode = (text: string) => {
+  const offsetUpper = 0x1d400 - 65; // Unicode offset for A
+  const offsetLower = 0x1d41a - 97; // Unicode offset for a
+
+  return text
+    .split('')
+    .map((char) => {
+      const code = char.charCodeAt(0);
+      if (code >= 65 && code <= 90) {
+        // Uppercase A-Z
+        return String.fromCodePoint(code + offsetUpper);
+      } else if (code >= 97 && code <= 122) {
+        // Lowercase a-z
+        return String.fromCodePoint(code + offsetLower);
+      } else {
+        return char;
+      }
+    })
+    .join('');
+};
+
 export default function HomePage() {
   const [query, setQuery] = useState('');
   const [notes, setNotes] = useState<INote[]>([]);
@@ -27,15 +49,48 @@ export default function HomePage() {
       .finally(() => setLoading(false));
   }, [query]);
 
-  // Copy caption HTML/text to clipboard with feedback
+  // Convert HTML caption to plain text with bold unicode for bold parts
+  const htmlToFacebookBoldText = (html: string) => {
+    // Create temp div to parse HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+
+    // Recursive function to parse nodes
+    const parseNode = (node: ChildNode): string => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent || '';
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        let text = '';
+        // Check if element is bold type
+        const isBold =
+          el.tagName === 'STRONG' ||
+          el.tagName === 'B' ||
+          (el.style && el.style.fontWeight === 'bold');
+
+        for (let i = 0; i < el.childNodes.length; i++) {
+          const childText = parseNode(el.childNodes[i]);
+          text += isBold ? toBoldUnicode(childText) : childText;
+        }
+
+        // Handle line breaks and paragraphs
+        if (el.tagName === 'BR' || el.tagName === 'P') {
+          text += '\n';
+        }
+
+        return text;
+      }
+      return '';
+    };
+
+    return parseNode(tempDiv).trim();
+  };
+
   const handleCopy = async (noteId: string, caption: string, captionIndex: number) => {
     try {
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = caption;
-      const plainText = tempDiv.innerText || tempDiv.textContent || caption;
-
-      await navigator.clipboard.writeText(plainText);
-
+      const formattedText = htmlToFacebookBoldText(caption);
+      await navigator.clipboard.writeText(formattedText);
       setCopiedIndex({ noteId, captionIndex });
       setTimeout(() => setCopiedIndex(null), 2000);
     } catch {
@@ -45,12 +100,12 @@ export default function HomePage() {
 
   return (
     <main className="max-w-7xl mx-auto p-6 sm:p-10">
-
       <h1 className="text-4xl font-extrabold text-center text-indigo-700 mb-10">
-     <Link href="/admin" className="hover:underline">
-       Admin
-      </Link>
+        <Link href="/admin" className="hover:underline">
+          Admin
+        </Link>
       </h1>
+
       {/* Search Bar */}
       <div className="mb-10 max-w-xl mx-auto">
         <Input
@@ -70,7 +125,7 @@ export default function HomePage() {
         <div className="text-center text-gray-500">No notes found.</div>
       ) : (
         <div className="space-y-12">
-          {notes?.map((note) => (
+          {notes.map((note) => (
             <section
               key={note._id}
               className="bg-white rounded-2xl shadow-xl p-8 transition-transform hover:scale-[1.02]"
@@ -80,7 +135,7 @@ export default function HomePage() {
               </h2>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {note?.captions.map((caption, i) => {
+                {note.captions.map((caption, i) => {
                   const isCopied = copiedIndex?.noteId === note._id && copiedIndex.captionIndex === i;
                   return (
                     <div
